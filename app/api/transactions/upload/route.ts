@@ -1,197 +1,105 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
 import { createSupabaseRouteClient } from "@/lib/supabase/server";
+import { requireAuth } from "@/lib/middleware/auth";
+import { rateLimitForRequest, generalApiLimit } from "@/lib/middleware/rate-limit";
+import { transactionUploadBodySchema } from "@/lib/validation/schemas";
 import { normalizeVendor } from "@/lib/vendor-matching";
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
-const systemPrompt = `You are a tax expert analyzing business expenses for Schedule C (IRS Form 1040).
-
-Your job is to:
-1. Categorize the expense into the correct IRS category
-2. Assign the Schedule C line number
-3. Assess deductibility (likely_good, needs_review, unclear)
-4. Provide concise reasoning
-5. Suggest 3-4 quick-action labels the user can click
-6. Identify special cases (meals, travel, etc.)
-
-Important tax rules:
-- Meals are 50% deductible, must be business-related
-- Local commuting is NOT deductible
-- Personal expenses are NEVER deductible
-- Amazon purchases need itemization
-- Equipment >$2,500 must be depreciated
-
-Return ONLY valid JSON, no markdown.`;
-
-function buildUserPrompt(t: {
-  vendor: string;
-  amount: number;
-  description?: string;
-  date: string;
-}) {
-  return `
-Analyze this transaction:
-
-Vendor: ${t.vendor}
-Amount: $${Math.abs(t.amount)}
-Description: ${t.description || "N/A"}
-Date: ${t.date}
-
-Return JSON:
-{
-  "category": "Meals" | "Travel" | "Supplies" | "Insurance" | "Other expenses" | etc,
-  "scheduleCLine": "Line 24b" | "Line 22" | etc,
-  "status": "likely_good" | "needs_review" | "unclear",
-  "confidence": 0.85,
-  "reasoning": "Brief 1-sentence explanation",
-  "isMeal": true | false,
-  "isTravel": true | false,
-  "suggestions": [
-    "Business Meal",
-    "Client Dinner",
-    "Team Lunch",
-    "Personal"
-  ]
-}
-`;
-}
+import { safeErrorMessage } from "@/lib/api/safe-error";
 
 type IncomingRow = {
   date: string;
   vendor: string;
   description?: string;
   amount: number;
+  category?: string;
+  notes?: string;
+  transaction_type?: string;
 };
 
 export async function POST(req: Request) {
-  const supabase = createSupabaseRouteClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const authClient = await createSupabaseRouteClient();
+  const auth = await requireAuth(authClient);
+  if (!auth.authorized) {
+    return NextResponse.json(auth.body, { status: auth.status });
   }
+  const userId = auth.userId;
+  const { success: rlOk } = await rateLimitForRequest(req, userId, generalApiLimit);
+  if (!rlOk) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+  }
+  const supabase = authClient;
 
-  const body = (await req.json()) as {
-    rows: IncomingRow[];
-    taxYear: number;
-  };
-
-  if (!body.rows || !Array.isArray(body.rows) || !body.rows.length) {
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
     return NextResponse.json(
-      { error: "No rows provided" },
+      { error: "Invalid request body. Expected JSON with { rows: [...], taxYear?: number }." },
       { status: 400 }
     );
   }
 
-  const taxYear = body.taxYear || new Date().getFullYear();
+  const parsed = transactionUploadBodySchema.safeParse(body);
+  if (!parsed.success) {
+    const msg = parsed.error.flatten().formErrors[0] ?? "Invalid request body";
+    return NextResponse.json({ error: msg }, { status: 400 });
+  }
 
-  // 1. Insert transactions
-  const inserts = body.rows.map((row) => ({
-    user_id: user.id,
-    date: new Date(row.date).toISOString().slice(0, 10),
-    vendor: row.vendor,
-    description: row.description ?? null,
-    amount: row.amount,
-    status: "pending",
-    tax_year: taxYear,
-    source: "csv_upload",
-    vendor_normalized: normalizeVendor(row.vendor),
-  }));
+  const { rows, taxYear: bodyTaxYear, dataSourceId } = parsed.data;
+  const taxYear = bodyTaxYear ?? new Date().getFullYear();
 
-  const { data: inserted, error: insertError } = await supabase
+  const dataSourceIdVal = dataSourceId ?? null;
+
+  const inserts = rows.map((row) => {
+    const txType =
+      row.transaction_type === "income" ? "income" : "expense";
+    return {
+      user_id: userId,
+      date: new Date(row.date).toISOString().slice(0, 10),
+      vendor: row.vendor,
+      description: row.description ?? null,
+      amount: row.amount,
+      category: row.category ?? null,
+      notes: row.notes ?? null,
+      status: "pending" as const,
+      tax_year: taxYear,
+      source: "csv_upload",
+      vendor_normalized: normalizeVendor(row.vendor),
+      transaction_type: txType,
+      ...(dataSourceIdVal ? { data_source_id: dataSourceIdVal } : {}),
+    };
+  });
+
+  const { data: inserted, error: insertError } = await (supabase as any)
     .from("transactions")
     .insert(inserts)
-    .select("*");
+    .select("id");
 
   if (insertError || !inserted) {
     return NextResponse.json(
-      { error: insertError?.message ?? "Failed to insert transactions" },
+      { error: safeErrorMessage(insertError?.message, "Failed to insert transactions") },
       { status: 500 }
     );
   }
 
-  // 2. Batch process with Claude
-  if (!process.env.ANTHROPIC_API_KEY) {
-    // If no API key configured, skip AI but still succeed.
-    return NextResponse.json({
-      imported: inserted.length,
-      aiProcessed: 0,
-      needsReview: inserted.length,
-    });
-  }
+  // Return the inserted IDs so the client can request AI analysis separately
+  const insertedIds = inserted.map((t: { id: string }) => t.id);
 
-  const batchSize = 20;
-  let successful = 0;
-
-  for (let i = 0; i < inserted.length; i += batchSize) {
-    const batch = inserted.slice(i, i + batchSize);
-
-    // Process in parallel within the batch
-    await Promise.all(
-      batch.map(async (t) => {
-        try {
-          const message = await anthropic.messages.create({
-            model: "claude-3-5-sonnet-20241022",
-            max_tokens: 512,
-            system: systemPrompt,
-            messages: [
-              {
-                role: "user",
-                content: buildUserPrompt({
-                  vendor: t.vendor,
-                  amount: Number(t.amount),
-                  description: t.description ?? undefined,
-                  date: t.date,
-                }),
-              },
-            ],
-          });
-
-          const first = message.content[0];
-          if (!first || first.type !== "text") return;
-
-          const parsed = JSON.parse(first.text) as {
-            category: string;
-            scheduleCLine: string;
-            status: string;
-            confidence: number;
-            reasoning: string;
-            isMeal: boolean;
-            isTravel: boolean;
-            suggestions: string[];
-          };
-
-          await supabase
-            .from("transactions")
-            .update({
-              category: parsed.category,
-              schedule_c_line: parsed.scheduleCLine,
-              ai_confidence: parsed.confidence,
-              ai_reasoning: parsed.reasoning,
-              ai_suggestions: parsed.suggestions,
-              is_meal: parsed.isMeal,
-              is_travel: parsed.isTravel,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", t.id)
-            .eq("user_id", user.id);
-
-          successful += 1;
-        } catch (e) {
-          console.error("Failed to categorize transaction", t.id, e);
-        }
+  // Update data source stats if provided
+  if (dataSourceIdVal) {
+    await (supabase as any)
+      .from("data_sources")
+      .update({
+        last_upload_at: new Date().toISOString(),
+        transaction_count: inserted.length,
       })
-    );
+      .eq("id", dataSourceIdVal)
+      .eq("user_id", userId);
   }
 
   return NextResponse.json({
     imported: inserted.length,
-    aiProcessed: successful,
+    transactionIds: insertedIds,
     needsReview: inserted.length,
   });
 }

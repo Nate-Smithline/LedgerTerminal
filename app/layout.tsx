@@ -1,16 +1,30 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Work_Sans, Marcellus } from "next/font/google";
 import "./globals.css";
-import { Sidebar } from "../components/Sidebar";
+import { AppShell } from "../components/AppShell";
 
-const inter = Inter({
+const workSans = Work_Sans({
   subsets: ["latin"],
   variable: "--font-sans",
 });
 
+const marcellus = Marcellus({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-display",
+});
+
 export const metadata: Metadata = {
-  title: "Business Deduction Tracker",
+  title: "ExpenseTerminal — Business Deduction Tracker",
   description: "Inbox-first tax deduction tracker for small businesses",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "32x32" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({
@@ -20,13 +34,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} antialiased bg-bg-secondary text-mono-dark`}>
-        <div className="min-h-screen flex bg-bg-secondary">
-          <Sidebar />
-          <main className="flex-1 px-12 py-12 bg-bg-secondary">
-            <div className="max-w-[1400px] mx-auto">{children}</div>
-          </main>
-        </div>
+      <head>
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"
+        />
+      </head>
+      <body className={`${workSans.variable} ${marcellus.variable} antialiased bg-bg-secondary text-mono-dark`}>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

@@ -9,6 +9,60 @@ export type Json =
 export interface Database {
   public: {
     Tables: {
+      profiles: {
+        Row: {
+          id: string;
+          email: string | null;
+          display_name: string | null;
+          first_name: string | null;
+          last_name: string | null;
+          avatar_url: string | null;
+          phone: string | null;
+          email_opt_in: boolean;
+          notification_email_updates: boolean;
+          notification_group: boolean;
+          onboarding_progress: Json | null;
+          terms_accepted_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          email?: string | null;
+          display_name?: string | null;
+          first_name?: string | null;
+          last_name?: string | null;
+          avatar_url?: string | null;
+          phone?: string | null;
+          email_opt_in?: boolean;
+          notification_email_updates?: boolean;
+          notification_group?: boolean;
+          onboarding_progress?: Json | null;
+          terms_accepted_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["profiles"]["Insert"]>;
+      };
+      email_verifications: {
+        Row: {
+          id: string;
+          user_id: string;
+          token_hash: string;
+          expires_at: string;
+          verified_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          token_hash: string;
+          expires_at: string;
+          verified_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["email_verifications"]["Insert"]>;
+      };
       transactions: {
         Row: {
           id: string;
@@ -28,10 +82,13 @@ export interface Database {
           notes: string | null;
           vendor_normalized: string | null;
           auto_sort_rule_id: string | null;
+          deduction_percent: number | null;
           is_meal: boolean | null;
           is_travel: boolean | null;
           tax_year: number;
           source: string | null;
+          transaction_type: "expense" | "income" | null;
+          data_source_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -53,10 +110,13 @@ export interface Database {
           notes?: string | null;
           vendor_normalized?: string | null;
           auto_sort_rule_id?: string | null;
+          deduction_percent?: number | null;
           is_meal?: boolean | null;
           is_travel?: boolean | null;
           tax_year: number;
           source?: string | null;
+          transaction_type?: "expense" | "income" | null;
+          data_source_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -83,6 +143,35 @@ export interface Database {
         };
         Update: Partial<Database["public"]["Tables"]["auto_sort_rules"]["Insert"]>;
       };
+      vendor_patterns: {
+        Row: {
+          id: string;
+          user_id: string;
+          vendor_normalized: string;
+          category: string | null;
+          schedule_c_line: string | null;
+          deduction_percent: number | null;
+          quick_labels: Json | null;
+          confidence: number | null;
+          times_used: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          vendor_normalized: string;
+          category?: string | null;
+          schedule_c_line?: string | null;
+          deduction_percent?: number | null;
+          quick_labels?: Json | null;
+          confidence?: number | null;
+          times_used?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["vendor_patterns"]["Insert"]>;
+      };
       deductions: {
         Row: {
           id: string;
@@ -106,7 +195,69 @@ export interface Database {
         };
         Update: Partial<Database["public"]["Tables"]["deductions"]["Insert"]>;
       };
+      data_sources: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          account_type: string;
+          institution: string | null;
+          last_upload_at: string | null;
+          transaction_count: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          account_type: string;
+          institution?: string | null;
+          last_upload_at?: string | null;
+          transaction_count?: number;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["data_sources"]["Insert"]>;
+      };
+      org_settings: {
+        Row: {
+          id: string;
+          user_id: string;
+          business_name: string | null;
+          ein: string | null;
+          business_address: string | null;
+          filing_type: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          business_name?: string | null;
+          ein?: string | null;
+          business_address?: string | null;
+          filing_type?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["org_settings"]["Insert"]>;
+      };
+      tax_year_settings: {
+        Row: {
+          id: string;
+          user_id: string;
+          tax_year: number;
+          tax_rate: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          tax_year: number;
+          tax_rate: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["tax_year_settings"]["Insert"]>;
+      };
     };
   };
 }
-

@@ -1,0 +1,108 @@
+import { z } from "zod";
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const uuidSchema = z.string().regex(UUID_REGEX, "Invalid UUID");
+
+export const limitSchema = z.coerce
+  .number()
+  .int()
+  .min(1, "Limit must be at least 1")
+  .max(1000, "Limit must be at most 1000")
+  .default(100);
+
+export const offsetSchema = z.coerce
+  .number()
+  .int()
+  .min(0, "Offset must be non-negative")
+  .max(10000, "Offset must be at most 10000")
+  .default(0);
+
+export const taxYearSchema = z.coerce
+  .number()
+  .int()
+  .min(2000, "Tax year must be 2000 or later")
+  .max(2100, "Tax year must be 2100 or earlier");
+
+export const amountSchema = z.number().finite().refine(
+  (n) => Math.abs(n) < 10_000_000,
+  "Amount must be between -10,000,000 and 10,000,000"
+);
+
+export const deductionPercentSchema = z.coerce
+  .number()
+  .min(0, "Deduction percent must be 0-100")
+  .max(100, "Deduction percent must be 0-100");
+
+export const maxString = (max: number) => z.string().max(max);
+export const vendorSchema = maxString(500);
+export const descriptionSchema = maxString(2000);
+export const notesSchema = maxString(2000);
+export const businessPurposeSchema = maxString(2000);
+
+export const transactionRowSchema = z.object({
+  date: z.string().max(50),
+  vendor: vendorSchema,
+  description: z.string().max(2000).optional(),
+  amount: z.number().finite(),
+  category: z.string().max(200).optional(),
+  notes: notesSchema.optional(),
+  transaction_type: z.enum(["income", "expense"]).optional(),
+});
+
+export const transactionUploadBodySchema = z.object({
+  rows: z.array(transactionRowSchema).min(1).max(5000),
+  taxYear: z.coerce.number().int().min(2000).max(2100).optional(),
+  dataSourceId: uuidSchema.nullable().optional(),
+});
+
+export const transactionIdsBodySchema = z.object({
+  transactionIds: z.array(uuidSchema).min(1).max(1000),
+});
+
+export const transactionUpdateBodySchema = z.object({
+  id: uuidSchema,
+  quick_label: maxString(500).optional(),
+  business_purpose: businessPurposeSchema.optional(),
+  notes: notesSchema.optional(),
+  status: z.enum(["pending", "completed", "auto_sorted"]).optional(),
+  deduction_percent: deductionPercentSchema.optional(),
+});
+
+/** Single transaction for POST /api/transactions (manual log) */
+export const transactionPostBodySchema = z.object({
+  date: z.string().max(50),
+  vendor: vendorSchema,
+  amount: amountSchema,
+  description: descriptionSchema.optional(),
+  transaction_type: z.enum(["income", "expense"]).optional(),
+});
+
+export function parseQueryLimit(value: string | null): number {
+  const parsed = limitSchema.safeParse(value ?? "100");
+  return parsed.success ? parsed.data : 100;
+}
+
+export function parseQueryOffset(value: string | null): number {
+  const parsed = offsetSchema.safeParse(value ?? "0");
+  return parsed.success ? parsed.data : 0;
+}
+
+export function parseQueryTaxYear(value: string | null): number | null {
+  if (value == null || value === "") return null;
+  const parsed = taxYearSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+export const taxYearSettingsPostSchema = z.object({
+  tax_year: taxYearSchema,
+  tax_rate: z.number().min(0, "Tax rate must be 0 or more").max(1, "Tax rate must be 1 or less"),
+});
+
+export const deductionPostSchema = z.object({
+  type: z.string().min(1, "Type is required").max(200),
+  tax_year: taxYearSchema,
+  amount: amountSchema,
+  tax_savings: amountSchema,
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});

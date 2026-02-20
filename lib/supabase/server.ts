@@ -1,34 +1,63 @@
 import { cookies } from "next/headers";
-import {
-  createRouteHandlerClient,
-  createServerComponentClient,
-} from "@supabase/auth-helpers-nextjs";
+import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import type { Database } from "../types/database";
 
-function getSupabaseKeys() {
+async function getServerSupabaseClient() {
+  const cookieStore = await cookies();
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  // Prefer secret key server-side if provided, fall back to publishable key.
-  const supabaseKey =
-    process.env.SUPABASE_SECRET_KEY ??
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
   if (!supabaseUrl || !supabaseKey) {
     throw new Error(
-      "Supabase server client is missing NEXT_PUBLIC_SUPABASE_URL and/or SUPABASE_SECRET_KEY / NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
+      "Supabase server client is missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
     );
   }
 
-  return { supabaseUrl, supabaseKey };
+  return createServerClient<Database>(supabaseUrl, supabaseKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll(cookiesToSet) {
+        try {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            cookieStore.set(name, value, { ...options, sameSite: "strict" })
+          );
+        } catch {
+          // Ignore if cookies cannot be set from this context.
+        }
+      },
+    },
+  });
 }
 
-export function createSupabaseRouteClient() {
-  const { supabaseUrl, supabaseKey } = getSupabaseKeys();
-  return createRouteHandlerClient<Database>({ cookies, supabaseUrl, supabaseKey });
+/**
+ * Service-role client that bypasses RLS.
+ * Use only for server-side operations that don't use the user's session (e.g. send-verification email).
+ */
+export function createSupabaseServiceClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SECRET_KEY;
+
+  if (!supabaseUrl || !serviceKey) {
+    throw new Error(
+      "Service client requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY"
+    );
+  }
+
+  return createClient<Database>(supabaseUrl, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 }
 
-export function createSupabaseServerClient() {
-  const { supabaseUrl, supabaseKey } = getSupabaseKeys();
-  return createServerComponentClient<Database>({ cookies, supabaseUrl, supabaseKey });
+// For Route Handlers (API routes)
+export async function createSupabaseRouteClient() {
+  return getServerSupabaseClient();
 }
 
+// For Server Components / pages
+export async function createSupabaseServerClient() {
+  return getServerSupabaseClient();
+}
 

@@ -1,0 +1,139 @@
+export function welcomeEmailHtml(firstName: string): string {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://expenseterminal.com";
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <title>Welcome to ExpenseTerminal</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f9f7f5;font-family:'Work Sans',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9f7f5;padding:48px 20px;">
+    <tr>
+      <td align="center">
+        <!-- Logo -->
+        <table role="presentation" width="520" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="padding:0 0 32px;text-align:center;">
+              <span style="font-family:Georgia,'Times New Roman',serif;font-size:20px;font-weight:400;color:#2a2a2a;letter-spacing:-0.01em;">ExpenseTerminal</span>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Main card -->
+        <table role="presentation" width="520" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 16px -4px rgba(0,0,0,0.1);">
+          <tr>
+            <td style="padding:48px 48px 24px;">
+              <h1 style="margin:0 0 16px;font-family:Georgia,'Times New Roman',serif;font-size:26px;font-weight:400;color:#2a2a2a;letter-spacing:-0.01em;">
+                Welcome${firstName ? `, ${firstName}` : ""}
+              </h1>
+              <p style="margin:0;font-size:15px;color:#636363;line-height:1.7;">
+                Your account is verified and ready. Here&rsquo;s how to maximize your deductions:
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 48px 32px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="padding:16px 0;border-top:1px solid #e8e2dc;">
+                    <table role="presentation" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding-right:12px;vertical-align:top;">
+                          <span style="font-family:Georgia,'Times New Roman',serif;font-size:13px;color:#b87c5e;font-style:italic;">01</span>
+                        </td>
+                        <td>
+                          <strong style="color:#2a2a2a;font-size:14px;">Connect your data</strong>
+                          <p style="margin:4px 0 0;font-size:13px;color:#636363;line-height:1.6;">Upload a CSV or Excel file from your bank or accounting tool.</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:16px 0;border-top:1px solid #e8e2dc;">
+                    <table role="presentation" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding-right:12px;vertical-align:top;">
+                          <span style="font-family:Georgia,'Times New Roman',serif;font-size:13px;color:#b87c5e;font-style:italic;">02</span>
+                        </td>
+                        <td>
+                          <strong style="color:#2a2a2a;font-size:14px;">Review your inbox</strong>
+                          <p style="margin:4px 0 0;font-size:13px;color:#636363;line-height:1.6;">AI categorizes each transaction &mdash; confirm, adjust, or skip.</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:16px 0;border-top:1px solid #e8e2dc;">
+                    <table role="presentation" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding-right:12px;vertical-align:top;">
+                          <span style="font-family:Georgia,'Times New Roman',serif;font-size:13px;color:#b87c5e;font-style:italic;">03</span>
+                        </td>
+                        <td>
+                          <strong style="color:#2a2a2a;font-size:14px;">Export for tax time</strong>
+                          <p style="margin:4px 0 0;font-size:13px;color:#636363;line-height:1.6;">Download a Schedule C summary or share with your CPA.</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 48px 48px;text-align:center;">
+              <a href="${appUrl}/inbox" style="display:inline-block;background:#3f5147;color:#ffffff;text-decoration:none;font-size:15px;font-weight:500;padding:14px 48px;border-radius:999px;font-family:'Work Sans',Helvetica,Arial,sans-serif;">
+                Go to Your Inbox
+              </a>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Footer -->
+        <table role="presentation" width="520" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="padding:32px 48px 0;text-align:center;">
+              <p style="margin:0;font-size:11px;color:#a3a3a3;line-height:1.6;">
+                Questions? Reply to this email &mdash; we read every message.
+              </p>
+              <p style="margin:8px 0 0;font-size:11px;color:#a3a3a3;">
+                &copy; ${new Date().getFullYear()} ExpenseTerminal &middot; AI-powered business deduction tracking
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+export function welcomeEmailText(firstName: string): string {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://expenseterminal.com";
+
+  return `Welcome${firstName ? `, ${firstName}` : ""}!
+
+Your account is verified and ready. Here's how to maximize your deductions:
+
+01 Connect your data
+Upload a CSV or Excel file from your bank or accounting tool.
+
+02 Review your inbox
+AI categorizes each transaction -- confirm, adjust, or skip.
+
+03 Export for tax time
+Download a Schedule C summary or share with your CPA.
+
+Go to your inbox: ${appUrl}/inbox
+
+Questions? Reply to this email -- we read every message.
+
+- ExpenseTerminal`;
+}

@@ -1,8 +1,6 @@
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { createBrowserClient } from "@supabase/ssr";
 import type { Database } from "../types/database";
 
-// Client-side helper explicitly uses the Supabase "publishable" key,
-// so we don't rely on the legacy NEXT_PUBLIC_SUPABASE_ANON_KEY name.
 export function createSupabaseClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -13,11 +11,9 @@ export function createSupabaseClient() {
     );
   }
 
-  return createClientComponentClient<Database>({
-    supabaseUrl,
-    supabaseKey,
-  });
+  return createBrowserClient<Database>(supabaseUrl, supabaseKey);
 }
+
 
 
 

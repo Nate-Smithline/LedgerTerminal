@@ -4,9 +4,21 @@ import { useState } from "react";
 import Papa from "papaparse";
 import ExcelJS from "exceljs";
 
+type UploadResult = {
+  imported?: number;
+  transactionIds?: string[];
+  aiProcessed?: number;
+  aiFailed?: number;
+  aiError?: string;
+  aiErrors?: string[];
+  aiErrorSummary?: string;
+  error?: string;
+};
+
 interface UploadModalProps {
   onClose: () => void;
-  onCompleted: () => Promise<void>;
+  onCompleted: (result?: UploadResult) => Promise<void>;
+  dataSourceId?: string;
 }
 
 type ParsedRow = {
@@ -14,32 +26,110 @@ type ParsedRow = {
   vendor: string;
   description?: string;
   amount: number;
+  category?: string;
+  notes?: string;
+  transaction_type?: string;
 };
 
-export function UploadModal({ onClose, onCompleted }: UploadModalProps) {
+function detectTransactionType(
+  row: Record<string, string | number | undefined>,
+  amount: number,
+  explicitType?: string,
+): string {
+  if (explicitType) {
+    const lower = explicitType.toLowerCase().trim();
+    if (lower === "income" || lower === "credit" || lower === "deposit") return "income";
+    if (lower === "expense" || lower === "debit" || lower === "charge") return "expense";
+  }
+  const lower = Object.fromEntries(
+    Object.entries(row).map(([k, v]) => [k.toLowerCase().trim(), v]),
+  );
+  if (lower["credit"] != null) {
+    const creditVal = Number(String(lower["credit"]).replace(/[$,]/g, ""));
+    if (!Number.isNaN(creditVal) && creditVal > 0) return "income";
+  }
+  if (amount > 0) return "income";
+  return "expense";
+}
+
+function excelSerialToDateString(n: number): string {
+  const date = new Date((n - 25569) * 86400 * 1000);
+  return date.toISOString().slice(0, 10);
+}
+
+function extractFromRow(
+  row: Record<string, string | number | undefined>,
+  keys: string[],
+): string {
+  const lower = Object.fromEntries(
+    Object.entries(row).map(([k, v]) => [k.toLowerCase().trim(), v]),
+  );
+  for (const k of keys) {
+    const v = lower[k.toLowerCase()];
+    if (v == null) continue;
+    const s = String(v).trim();
+    if (!s) continue;
+    if (typeof v === "number" && v > 10000 && v < 100000) return excelSerialToDateString(v);
+    return s;
+  }
+  return "";
+}
+
+function extractAmount(
+  row: Record<string, string | number | undefined>,
+  keys: string[],
+): number {
+  const lower = Object.fromEntries(
+    Object.entries(row).map(([k, v]) => [k.toLowerCase().trim(), v]),
+  );
+  for (const k of keys) {
+    const v = lower[k.toLowerCase()];
+    if (v != null) {
+      const n = Number(String(v).replace(/[$,]/g, ""));
+      if (!Number.isNaN(n)) return n;
+    }
+  }
+  for (const [header, val] of Object.entries(lower)) {
+    if (val == null) continue;
+    if (header.includes("amount") || header.includes("total") || header.includes("debit") || header.includes("credit")) {
+      const n = Number(String(val).replace(/[$,]/g, ""));
+      if (!Number.isNaN(n)) return header.includes("credit") ? -n : n;
+    }
+  }
+  return NaN;
+}
+
+function parseCsvToRows(content: string): ParsedRow[] {
+  const result = Papa.parse<Record<string, string>>(content, { header: true, skipEmptyLines: true });
+  return (result.data ?? [])
+    .map((row) => {
+      const amount = extractAmount(row, ["amount", "total", "debit", "credit"]);
+      const explicitType = extractFromRow(row, ["transaction type", "transaction_type", "txn type"]) || undefined;
+      const txType = detectTransactionType(row, amount, explicitType);
+      return {
+        date: extractFromRow(row, ["date", "posting date", "transaction date", "trans date", "postingdate"]),
+        vendor: extractFromRow(row, ["vendor", "merchant", "payee", "name", "description", "memo"]),
+        description: extractFromRow(row, ["description", "memo", "details", "notes"]),
+        amount,
+        category: extractFromRow(row, ["category", "type", "expense type", "expense category"]) || undefined,
+        notes: extractFromRow(row, ["notes", "note", "comment", "comments"]) || undefined,
+        transaction_type: txType,
+      };
+    })
+    .filter((r) => r.date && r.vendor && !Number.isNaN(r.amount));
+}
+
+export function UploadModal({ onClose, onCompleted, dataSourceId }: UploadModalProps) {
   const [file, setFile] = useState<File | null>(null);
   const [previewRows, setPreviewRows] = useState<ParsedRow[]>([]);
   const [taxYear, setTaxYear] = useState(new Date().getFullYear());
   const [loading, setLoading] = useState(false);
+  const [stage, setStage] = useState<"idle" | "parsing" | "uploading" | "done" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+  const [rowCount, setRowCount] = useState(0);
 
   function parseCsv(content: string) {
-    const result = Papa.parse<Record<string, string>>(content, {
-      header: true,
-      skipEmptyLines: true,
-    });
-    const rows: ParsedRow[] = (result.data ?? [])
-      .map((row) => ({
-        date: row.date || row.Date || row.DATE || "",
-        vendor: row.vendor || row.Vendor || row.VENDOR || "",
-        description:
-          row.description || row.Description || row.DESCRIPTION || "",
-        amount: Number(
-          row.amount || row.Amount || row.AMOUNT || row.total || row.Total
-        ),
-      }))
-      .filter((r) => r.date && r.vendor && !Number.isNaN(r.amount));
-    setPreviewRows(rows.slice(0, 10));
+    setPreviewRows(parseCsvToRows(content).slice(0, 8));
   }
 
   async function parseExcel(file: File) {
@@ -47,59 +137,26 @@ export function UploadModal({ onClose, onCompleted }: UploadModalProps) {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(data);
     const sheet = workbook.worksheets[0];
-    if (!sheet) {
-      setPreviewRows([]);
-      return;
-    }
+    if (!sheet) return;
 
     const headerRow = sheet.getRow(1);
     const headers: string[] = [];
-    headerRow.eachCell((cell, colNumber) => {
-      const key = String(cell.value ?? "").toLowerCase();
-      headers[colNumber] = key;
-    });
+    headerRow.eachCell((cell, colNumber) => { headers[colNumber] = String(cell.value ?? "").toLowerCase().trim(); });
 
     const rows: ParsedRow[] = [];
     sheet.eachRow((row, rowNumber) => {
-      if (rowNumber === 1) return; // skip header
-      const values: Record<string, any> = {};
+      if (rowNumber === 1) return;
+      const values: Record<string, string | number> = {};
       row.eachCell((cell, colNumber) => {
-        const headerKey = headers[colNumber];
-        if (!headerKey) return;
-        values[headerKey] = cell.value;
+        const h = headers[colNumber];
+        if (h) values[h] = typeof cell.value === "number" || typeof cell.value === "string" ? cell.value : cell.value != null ? String(cell.value) : "";
       });
-
-      const parsed: ParsedRow = {
-        date:
-          (values["date"] as string) ||
-          (values["Date"] as string) ||
-          (values["DATE"] as string) ||
-          "",
-        vendor:
-          (values["vendor"] as string) ||
-          (values["Vendor"] as string) ||
-          (values["VENDOR"] as string) ||
-          "",
-        description:
-          (values["description"] as string) ||
-          (values["Description"] as string) ||
-          (values["DESCRIPTION"] as string) ||
-          "",
-        amount: Number(
-          values["amount"] ??
-            values["Amount"] ??
-            values["AMOUNT"] ??
-            values["total"] ??
-            values["Total"]
-        ),
-      };
-
-      if (parsed.date && parsed.vendor && !Number.isNaN(parsed.amount)) {
-        rows.push(parsed);
-      }
+      const date = extractFromRow(values, ["date", "posting date", "transaction date", "trans date"]);
+      const vendor = extractFromRow(values, ["vendor", "merchant", "payee", "name", "description", "memo"]);
+      const amount = extractAmount(values, ["amount", "total", "debit", "credit"]);
+      if (date && vendor && !Number.isNaN(amount)) rows.push({ date, vendor, amount });
     });
-
-    setPreviewRows(rows.slice(0, 10));
+    setPreviewRows(rows.slice(0, 8));
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -107,240 +164,209 @@ export function UploadModal({ onClose, onCompleted }: UploadModalProps) {
     if (!f) return;
     setFile(f);
     setError(null);
-
     const ext = f.name.toLowerCase().split(".").pop();
-    if (ext === "csv") {
-      const text = await f.text();
-      parseCsv(text);
-    } else if (ext === "xlsx" || ext === "xls") {
-      await parseExcel(f);
-    } else {
-      setError("Unsupported file type. Please upload CSV or Excel.");
-    }
+    if (ext === "csv") { parseCsv(await f.text()); }
+    else if (ext === "xlsx" || ext === "xls") { await parseExcel(f); }
+    else { setError("Unsupported file type. Upload CSV or Excel."); }
   }
 
   async function handleImport() {
     if (!file) return;
     setLoading(true);
     setError(null);
+    setStage("parsing");
 
     try {
-      let rows = previewRows;
-      // If we only parsed a subset for preview, re-parse full file before upload.
-      if (rows.length === 0) {
-        const ext = file.name.toLowerCase().split(".").pop();
-        if (ext === "csv") {
-          const text = await file.text();
-          const result = Papa.parse<Record<string, string>>(text, {
-            header: true,
-            skipEmptyLines: true,
+      let rows: ParsedRow[] = [];
+      const ext = file.name.toLowerCase().split(".").pop();
+
+      if (ext === "csv") {
+        rows = parseCsvToRows(await file.text());
+      } else if (ext === "xlsx" || ext === "xls") {
+        const data = await file.arrayBuffer();
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(data);
+        const sheet = workbook.worksheets[0];
+        if (sheet) {
+          const headerRow = sheet.getRow(1);
+          const headers: string[] = [];
+          headerRow.eachCell((cell, colNumber) => { headers[colNumber] = String(cell.value ?? "").toLowerCase().trim(); });
+          sheet.eachRow((r, rowNumber) => {
+            if (rowNumber === 1) return;
+            const values: Record<string, string | number> = {};
+            r.eachCell((cell, colNumber) => { const h = headers[colNumber]; if (h) values[h] = cell.value as string | number; });
+            const date = extractFromRow(values, ["date", "posting date", "transaction date", "trans date"]);
+            const vendor = extractFromRow(values, ["vendor", "merchant", "payee", "name", "description", "memo"]);
+            const amount = extractAmount(values, ["amount", "total", "debit", "credit"]);
+            if (date && vendor && !Number.isNaN(amount)) rows.push({ date, vendor, amount });
           });
-          rows = (result.data ?? [])
-            .map((row) => ({
-              date: row.date || row.Date || row.DATE || "",
-              vendor: row.vendor || row.Vendor || row.VENDOR || "",
-              description:
-                row.description || row.Description || row.DESCRIPTION || "",
-              amount: Number(
-                row.amount ||
-                  row.Amount ||
-                  row.AMOUNT ||
-                  row.total ||
-                  row.Total
-              ),
-            }))
-            .filter((r) => r.date && r.vendor && !Number.isNaN(r.amount));
-        } else if (ext === "xlsx" || ext === "xls") {
-          const data = await file.arrayBuffer();
-          const workbook = new ExcelJS.Workbook();
-          await workbook.xlsx.load(data);
-          const sheet = workbook.worksheets[0];
-          if (sheet) {
-            const headerRow = sheet.getRow(1);
-            const headers: string[] = [];
-            headerRow.eachCell((cell, colNumber) => {
-              const key = String(cell.value ?? "").toLowerCase();
-              headers[colNumber] = key;
-            });
-
-            const parsedRows: ParsedRow[] = [];
-            sheet.eachRow((row, rowNumber) => {
-              if (rowNumber === 1) return;
-              const values: Record<string, any> = {};
-              row.eachCell((cell, colNumber) => {
-                const headerKey = headers[colNumber];
-                if (!headerKey) return;
-                values[headerKey] = cell.value;
-              });
-
-              const parsed: ParsedRow = {
-                date:
-                  (values["date"] as string) ||
-                  (values["Date"] as string) ||
-                  (values["DATE"] as string) ||
-                  "",
-                vendor:
-                  (values["vendor"] as string) ||
-                  (values["Vendor"] as string) ||
-                  (values["VENDOR"] as string) ||
-                  "",
-                description:
-                  (values["description"] as string) ||
-                  (values["Description"] as string) ||
-                  (values["DESCRIPTION"] as string) ||
-                  "",
-                amount: Number(
-                  values["amount"] ??
-                    values["Amount"] ??
-                    values["AMOUNT"] ??
-                    values["total"] ??
-                    values["Total"]
-                ),
-              };
-
-              if (
-                parsed.date &&
-                parsed.vendor &&
-                !Number.isNaN(parsed.amount)
-              ) {
-                parsedRows.push(parsed);
-              }
-            });
-            rows = parsedRows;
-          }
         }
       }
+
+      if (rows.length === 0) {
+        setStage("error");
+        setError("No valid rows found. Need columns for date, vendor, and amount.");
+        setLoading(false);
+        return;
+      }
+
+      setRowCount(rows.length);
+      setStage("uploading");
 
       const res = await fetch("/api/transactions/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          rows,
-          taxYear,
-        }),
+        body: JSON.stringify({ rows, taxYear, ...(dataSourceId ? { dataSourceId } : {}) }),
       });
 
+      const body = (await res.json().catch(() => ({}))) as {
+        imported?: number;
+        transactionIds?: string[];
+        error?: string;
+      };
+
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || "Failed to import transactions");
+        setStage("error");
+        throw new Error(body.error || "Failed to import");
       }
 
-      await onCompleted();
-      onClose();
-    } catch (e: any) {
-      setError(e.message ?? "Something went wrong while importing");
+      setStage("done");
+
+      // Return IDs so the parent can kick off background AI
+      await onCompleted({
+        imported: body.imported ?? 0,
+        transactionIds: body.transactionIds ?? [],
+      });
+    } catch (e: unknown) {
+      setStage("error");
+      setError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="card max-w-2xl w-full p-6">
-        <div className="flex justify-between items-center mb-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="rounded-xl bg-white shadow-lg max-w-lg w-full mx-4 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-bg-tertiary/40">
           <div>
-            <h2 className="text-xl font-semibold text-mono-dark">
-              Upload transactions
-            </h2>
-            <p className="text-sm text-mono-medium">
-              Drag and drop a CSV or Excel file. We&apos;ll auto-detect your
-              columns and process everything with AI.
-            </p>
+            <h2 className="text-sm font-semibold text-mono-dark">Upload Transactions</h2>
+            <p className="text-[11px] text-mono-light mt-0.5">CSV or Excel. AI categorization runs in the background.</p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-mono-medium hover:text-mono-dark text-sm"
-          >
-            Close
-          </button>
+          <button onClick={onClose} className="text-mono-light hover:text-mono-dark text-xs">Close</button>
         </div>
 
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-mono-dark mb-1">
-            Tax Year
-          </label>
-          <select
-            value={taxYear}
-            onChange={(e) => setTaxYear(parseInt(e.target.value, 10))}
-            className="bg-white border border-bg-tertiary rounded-md px-3 py-1.5 text-sm"
-          >
-            <option value={taxYear}>{taxYear}</option>
-            <option value={taxYear - 1}>{taxYear - 1}</option>
-            <option value={taxYear - 2}>{taxYear - 2}</option>
-          </select>
-        </div>
+        <div className="px-5 py-4 space-y-4">
+          {/* Tax year */}
+          <div className="flex items-center gap-3">
+            <label className="text-xs font-medium text-mono-medium">Tax Year</label>
+            <select
+              value={taxYear}
+              onChange={(e) => setTaxYear(parseInt(e.target.value, 10))}
+              className="bg-white border border-bg-tertiary rounded-md px-2 py-1 text-xs"
+            >
+              <option value={taxYear}>{taxYear}</option>
+              <option value={taxYear - 1}>{taxYear - 1}</option>
+              <option value={taxYear - 2}>{taxYear - 2}</option>
+            </select>
+          </div>
 
-        <div className="border-2 border-dashed border-bg-tertiary rounded-md p-6 mb-4 bg-bg-secondary">
-          <div className="flex flex-col items-center justify-center gap-2 text-center">
-            <p className="text-sm text-mono-medium">
-              Drop your CSV/Excel file here, or click to browse.
-            </p>
+          {/* Drop zone */}
+          <div className="border-2 border-dashed border-bg-tertiary rounded-lg p-6 bg-bg-secondary/50 text-center">
+            <p className="text-xs text-mono-medium mb-2">Drop a file here, or click to browse</p>
             <input
               type="file"
-              accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+              accept=".csv,.xlsx,.xls"
               onChange={handleFileChange}
-              className="mt-2 text-sm"
+              className="text-xs"
             />
           </div>
+
+          {/* Preview */}
+          {previewRows.length > 0 && (
+            <>
+              {previewRows.some((r) => r.transaction_type === "income") && (
+                <div className="rounded-md bg-accent-sage/10 px-3 py-2 text-xs text-accent-sage">
+                  Income transactions detected. These will be added to your business revenue.
+                </div>
+              )}
+              <div className="border border-bg-tertiary/60 rounded-lg overflow-auto max-h-48 text-[11px]">
+                <table className="min-w-full">
+                  <thead className="bg-bg-secondary text-mono-light">
+                    <tr>
+                      <th className="px-2 py-1.5 text-left font-medium">Date</th>
+                      <th className="px-2 py-1.5 text-left font-medium">Vendor</th>
+                      <th className="px-2 py-1.5 text-right font-medium">Amount</th>
+                      <th className="px-2 py-1.5 text-left font-medium">Type</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewRows.map((row, idx) => (
+                      <tr key={idx} className={idx % 2 ? "bg-bg-secondary/30" : ""}>
+                        <td className="px-2 py-1">{row.date}</td>
+                        <td className="px-2 py-1 truncate max-w-[200px]">{row.vendor}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">${Math.abs(row.amount).toFixed(2)}</td>
+                        <td className="px-2 py-1">
+                          <span className={`inline-block rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                            row.transaction_type === "income"
+                              ? "bg-accent-sage/10 text-accent-sage"
+                              : "bg-bg-tertiary/50 text-mono-medium"
+                          }`}>
+                            {row.transaction_type === "income" ? "Income" : "Expense"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {/* Progress */}
+          {loading && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-xs">
+                <span>{stage === "parsing" ? "Parsing file..." : stage === "uploading" ? `Uploading ${rowCount} rows...` : "Processing..."}</span>
+              </div>
+              <div className="h-1.5 w-full bg-bg-tertiary rounded-full overflow-hidden">
+                <div className="h-full bg-accent-sage animate-pulse" style={{ width: stage === "uploading" ? "70%" : "40%" }} />
+              </div>
+            </div>
+          )}
+
+          {stage === "done" && !loading && (
+            <div className="rounded-md bg-accent-sage/10 px-3 py-2 text-xs text-accent-sage font-medium">
+              {rowCount} transactions imported. AI categorization is running in the background.
+            </div>
+          )}
+
+          {error && <p className="text-xs text-red-600">{error}</p>}
         </div>
 
-        {previewRows.length > 0 && (
-          <div className="mb-4">
-            <p className="text-sm font-medium text-mono-dark mb-2">
-              Preview (first 10 rows)
-            </p>
-            <div className="border border-bg-tertiary rounded-md max-h-64 overflow-auto text-xs">
-              <table className="min-w-full">
-                <thead className="bg-bg-secondary">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Date</th>
-                    <th className="px-3 py-2 text-left">Vendor</th>
-                    <th className="px-3 py-2 text-left">Description</th>
-                    <th className="px-3 py-2 text-left">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {previewRows.map((row, idx) => (
-                    <tr key={idx} className="border-t border-bg-tertiary">
-                      <td className="px-3 py-1.5">{row.date}</td>
-                      <td className="px-3 py-1.5">{row.vendor}</td>
-                      <td className="px-3 py-1.5">
-                        {row.description ?? ""}
-                      </td>
-                      <td className="px-3 py-1.5">
-                        ${row.amount.toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {error && (
-          <p className="text-sm text-danger mb-3">
-            {error}
-          </p>
-        )}
-
-        <div className="flex justify-end gap-3 mt-4">
-          <button
-            className="btn-secondary text-sm px-4 py-2"
-            onClick={onClose}
-          >
-            Cancel
-          </button>
-          <button
-            className="btn-primary text-sm px-4 py-2"
-            disabled={!file || loading}
-            onClick={handleImport}
-          >
-            {loading ? "Processing with AI..." : "Import & Process"}
-          </button>
+        {/* Footer */}
+        <div className="flex justify-end gap-2 px-5 py-3 border-t border-bg-tertiary/40 bg-bg-secondary/30">
+          {stage === "done" ? (
+            <button onClick={onClose} className="rounded-md bg-accent-sage px-4 py-1.5 text-xs font-medium text-white hover:bg-accent-sage/90 transition">
+              Done
+            </button>
+          ) : (
+            <>
+              <button onClick={onClose} disabled={loading} className="rounded-md border border-bg-tertiary px-3 py-1.5 text-xs text-mono-medium hover:bg-bg-secondary transition disabled:opacity-40">
+                Cancel
+              </button>
+              <button
+                disabled={!file || loading}
+                onClick={handleImport}
+                className="rounded-md bg-accent-sage px-4 py-1.5 text-xs font-medium text-white hover:bg-accent-sage/90 transition disabled:opacity-40"
+              >
+                {loading ? "Importing..." : "Import"}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
   );
 }
-
