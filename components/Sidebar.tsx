@@ -111,14 +111,14 @@ export function Sidebar() {
           <Link
             key={item.href}
             href={item.href}
-            className={`flex items-center gap-3 rounded-lg px-3 py-3 text-[14px] font-medium transition-colors ${
+            className={`flex items-center gap-3 rounded-lg px-3 py-3 text-[14px] font-medium transition-all ${
               isActive(item.href)
-                ? "text-accent-sage bg-accent-sage/5"
+                ? "text-accent-terracotta bg-accent-terracotta/10"
                 : "text-mono-medium hover:text-mono-dark hover:bg-bg-tertiary/30"
             }`}
           >
-            <span className={`material-symbols-rounded text-[22px] leading-none ${
-              isActive(item.href) ? "text-accent-sage" : ""
+            <span className={`material-symbols-rounded text-[22px] leading-none transition-colors ${
+              isActive(item.href) ? "text-accent-terracotta" : ""
             }`}>
               {item.icon}
             </span>
@@ -138,37 +138,35 @@ export function Sidebar() {
           <Link
             key={item.href}
             href={item.href}
-            className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] transition-colors ${
+            className={`flex items-center px-3 py-2.5 text-base transition-all relative group ${
               isActive(item.href)
-                ? "text-accent-sage font-medium"
+                ? "text-accent-terracotta font-medium"
                 : "text-mono-light hover:text-mono-medium"
             }`}
           >
-            <span className={`material-symbols-rounded text-[20px] leading-none ${
-              isActive(item.href) ? "text-accent-sage" : ""
-            }`}>
-              {item.icon}
-            </span>
-            <span>{item.label}</span>
+            <span className={`absolute left-0 top-1/2 -translate-y-1/2 h-0.5 bg-accent-terracotta transition-all ${
+              isActive(item.href) ? "w-1" : "w-0 group-hover:w-1"
+            }`} />
+            <span className="pl-4">{item.label}</span>
           </Link>
         ))}
       </div>
 
       {/* Footer */}
-      <div className="border-t border-bg-tertiary/30 px-5 py-4 flex items-center gap-4">
+      <div className="px-5 pb-4 flex items-center gap-3">
         <a
           href={GUIDES_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-[12px] text-mono-light hover:text-mono-medium transition-colors flex items-center gap-1.5"
+          className="flex items-center gap-1.5 px-3 py-2.5 rounded-lg border border-bg-tertiary/60 text-sm text-mono-medium hover:text-mono-dark hover:border-bg-tertiary transition-all"
         >
-          <span className="material-symbols-rounded text-[16px]">menu_book</span> Guides
+          <span className="material-symbols-rounded text-[12px]">menu_book</span> Guides
         </a>
         <a
           href="mailto:hello@expenseterminal.com"
-          className="text-[12px] text-mono-light hover:text-mono-medium transition-colors flex items-center gap-1.5"
+          className="flex items-center gap-1.5 px-3 py-2.5 rounded-lg border border-bg-tertiary/60 text-sm text-mono-medium hover:text-mono-dark hover:border-bg-tertiary transition-all"
         >
-          <span className="material-symbols-rounded text-[16px]">mail</span> Email Us
+          <span className="material-symbols-rounded text-[12px]">mail</span> Email Us
         </a>
       </div>
     </aside>

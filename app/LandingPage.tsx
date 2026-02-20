@@ -1,10 +1,14 @@
+"use client";
+
 import Link from "next/link";
+import Image from "next/image";
+import { useState } from "react";
 
 const STEPS = [
   {
     number: "01",
     title: "Sign Up",
-    description: "Create a free account to start tracking your business deductions in minutes.",
+    description: "Create a free account to start tracking your business deductions in minutes. Perfect for ABA professionals and small business owners.",
   },
   {
     number: "02",
@@ -56,6 +60,71 @@ const FEATURES = [
   },
 ];
 
+function MadeInAmericaSection() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  return (
+    <>
+      <section className="px-8 md:px-16 py-16 bg-bg-secondary border-y border-bg-tertiary/40">
+        <div className="max-w-5xl mx-auto text-center">
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="inline-flex items-center gap-2 text-mono-medium hover:text-mono-dark transition-colors group"
+          >
+            <img 
+              src="/usa-flag.png" 
+              alt="USA Flag" 
+              className="w-6 h-4 object-contain"
+            />
+            <span className="text-lg font-display">Made in America</span>
+          </button>
+        </div>
+      </section>
+
+      {isModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          onClick={() => setIsModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-lg max-w-lg w-full p-8 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between mb-6">
+              <h3 className="font-display text-2xl text-mono-dark">Made in America</h3>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="text-mono-light hover:text-mono-dark transition-colors"
+              >
+                <span className="material-symbols-rounded">close</span>
+              </button>
+            </div>
+            <div className="space-y-4 text-mono-medium leading-relaxed">
+              <p>
+                ExpenseTerminal is proudly based out of <strong>New Jersey</strong>, founded by small business owners who understand the challenges of running a business.
+              </p>
+              <p>
+                We're focused on supporting <strong>American businesses</strong> and helping them maximize their deductions while staying compliant with IRS regulations.
+              </p>
+              <p>
+                Our platform is built with the needs of American entrepreneurs in mind, providing tools that make tax preparation simpler and more accessible for small businesses across the country.
+              </p>
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="btn-primary text-sm"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function LandingPage() {
   return (
     <div className="min-h-screen bg-bg-secondary">
@@ -79,13 +148,16 @@ export function LandingPage() {
 
       {/* Hero */}
       <section className="relative overflow-hidden">
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "linear-gradient(160deg, #3f5147 0%, #2d3a32 40%, #1a2420 100%)",
-          }}
-        />
+        <div className="absolute inset-0">
+          <Image
+            src="/hero-bg-landscape.png"
+            alt=""
+            fill
+            className="object-cover"
+            priority
+          />
+          <div className="absolute inset-0 bg-black/40" />
+        </div>
         <div className="relative px-8 md:px-16 py-28 md:py-40 max-w-5xl mx-auto text-center">
           <h1 className="font-display text-4xl md:text-6xl text-white leading-tight tracking-tight mb-6">
             Maximize your<br />business deductions
@@ -124,7 +196,10 @@ export function LandingPage() {
                 small business owners who want to stop leaving money on the table at tax time.
               </p>
               <div className="flex gap-3">
-                <Link href="/signup" className="btn-primary text-sm">
+                <Link 
+                  href="/signup" 
+                  className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-sm font-medium text-accent-sage transition-all hover:shadow-lg hover:scale-[1.02]"
+                >
                   Get Started
                 </Link>
               </div>
@@ -173,6 +248,9 @@ export function LandingPage() {
           </div>
         </div>
       </section>
+
+      {/* Made in America */}
+      <MadeInAmericaSection />
 
       {/* About / Mission */}
       <section className="px-8 md:px-16 py-24 md:py-32 bg-bg-tertiary/30">

@@ -89,7 +89,8 @@ button, [role="button"], a.btn-primary, a.btn-secondary, a.btn-pill, a.btn-warm 
 }
 
 .btn-warm {
-  @apply inline-flex items-center justify-center rounded-full px-6 py-3 text-sm font-medium text-white transition-all duration-200 shadow-sm;
+  @apply inline-flex items-center justify-center px-6 py-3 text-sm font-medium text-white transition-all duration-200 shadow-sm;
+  border-radius: 10px;
   background: var(--color-accent-terracotta);
 }
 .btn-warm:hover {
@@ -118,7 +119,8 @@ button, [role="button"], a.btn-primary, a.btn-secondary, a.btn-pill, a.btn-warm 
 /* ---- Auth input style (Practicing the Way) ---- */
 
 .auth-input {
-  @apply w-full rounded-xl border border-bg-tertiary/60 bg-white px-4 py-3.5 text-sm text-mono-dark placeholder-mono-light transition-all duration-200;
+  @apply w-full border border-bg-tertiary/60 bg-white px-4 py-3.5 text-sm text-mono-dark placeholder-mono-light transition-all duration-200;
+  border-radius: 10px;
 }
 .auth-input:focus {
   @apply border-accent-sage/40 outline-none;

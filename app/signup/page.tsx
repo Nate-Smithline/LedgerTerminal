@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseClient } from "@/lib/supabase/client";
 import { getAuthErrorMessage } from "@/lib/auth-errors";
@@ -28,10 +28,24 @@ export default function SignupPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [businessType, setBusinessType] = useState("");
   const [noBusinessYet, setNoBusinessYet] = useState(false);
-  const [emailOptIn, setEmailOptIn] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle if not typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      
+      if (e.key === "l" || e.key === "L") {
+        e.preventDefault();
+        router.push("/login");
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -67,7 +81,7 @@ export default function SignupPage() {
             first_name: firstName.trim(),
             last_name: lastName.trim(),
             business_type: noBusinessYet ? null : businessType,
-            email_opt_in: emailOptIn,
+            email_opt_in: true,
             terms_accepted_at: new Date().toISOString(),
           },
         },
@@ -103,10 +117,11 @@ export default function SignupPage() {
   }
 
   return (
-    <AuthLayout>
-      <p className="text-center text-sm text-mono-medium mb-8">
-        Track and maximize your business deductions.
-      </p>
+    <div className="relative w-full">
+      <AuthLayout>
+        <p className="text-center text-sm text-mono-medium mb-8">
+          Track and maximize your business deductions.
+        </p>
 
       <form onSubmit={handleSubmit} className="space-y-3.5">
         {/* Name row */}
@@ -146,7 +161,7 @@ export default function SignupPage() {
               type={showPassword ? "text" : "password"}
               required
               minLength={8}
-              placeholder="Password (12+ chars, or 8+ with upper, lower, number, symbol)"
+              placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="auth-input pr-12"
@@ -154,18 +169,55 @@ export default function SignupPage() {
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-mono-light hover:text-mono-medium transition-colors"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-mono-light hover:text-mono-medium transition-colors flex items-center justify-center"
               tabIndex={-1}
+              style={{ height: '20px', width: '20px' }}
             >
-              <span className="material-symbols-rounded text-[20px]">
+              <span className="material-symbols-rounded text-[20px] leading-none">
                 {showPassword ? "visibility_off" : "visibility"}
               </span>
             </button>
           </div>
           {password && (
-            <p className={`mt-1 text-xs ${getPasswordStrength(password) === "weak" ? "text-red-600" : getPasswordStrength(password) === "fair" ? "text-amber-600" : "text-green-600"}`}>
-              Strength: {getPasswordStrength(password)}
-            </p>
+            <div className="mt-2 p-3 rounded-lg border border-bg-tertiary bg-bg-secondary">
+              <div className="space-y-1.5 text-xs">
+                <div className={`flex items-center gap-2 ${password.length >= 12 || (password.length >= 8 && /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password) && /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password)) ? "text-green-600" : "text-mono-medium"}`}>
+                  <span className="material-symbols-rounded text-[16px]">
+                    {password.length >= 12 || (password.length >= 8 && /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password) && /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password)) ? "check_circle" : "radio_button_unchecked"}
+                  </span>
+                  <span>{password.length >= 12 ? "12+ characters" : "8+ characters with uppercase, lowercase, number, and special character"}</span>
+                </div>
+                <div className={`flex items-center gap-2 ${/[a-z]/.test(password) ? "text-green-600" : "text-mono-medium"}`}>
+                  <span className="material-symbols-rounded text-[16px]">
+                    {/[a-z]/.test(password) ? "check_circle" : "radio_button_unchecked"}
+                  </span>
+                  <span>Lowercase letter</span>
+                </div>
+                <div className={`flex items-center gap-2 ${/[A-Z]/.test(password) ? "text-green-600" : "text-mono-medium"}`}>
+                  <span className="material-symbols-rounded text-[16px]">
+                    {/[A-Z]/.test(password) ? "check_circle" : "radio_button_unchecked"}
+                  </span>
+                  <span>Uppercase letter</span>
+                </div>
+                <div className={`flex items-center gap-2 ${/\d/.test(password) ? "text-green-600" : "text-mono-medium"}`}>
+                  <span className="material-symbols-rounded text-[16px]">
+                    {/\d/.test(password) ? "check_circle" : "radio_button_unchecked"}
+                  </span>
+                  <span>Number</span>
+                </div>
+                <div className={`flex items-center gap-2 ${/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password) ? "text-green-600" : "text-mono-medium"}`}>
+                  <span className="material-symbols-rounded text-[16px]">
+                    {/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password) ? "check_circle" : "radio_button_unchecked"}
+                  </span>
+                  <span>Special character</span>
+                </div>
+              </div>
+              <div className="mt-2 pt-2 border-t border-bg-tertiary">
+                <p className={`text-xs font-medium ${getPasswordStrength(password) === "weak" ? "text-red-600" : getPasswordStrength(password) === "fair" ? "text-amber-600" : "text-green-600"}`}>
+                  Strength: {getPasswordStrength(password)}
+                </p>
+              </div>
+            </div>
           )}
         </div>
 
@@ -183,10 +235,11 @@ export default function SignupPage() {
           <button
             type="button"
             onClick={() => setShowConfirm(!showConfirm)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-mono-light hover:text-mono-medium transition-colors"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-mono-light hover:text-mono-medium transition-colors flex items-center justify-center"
             tabIndex={-1}
+            style={{ height: '20px', width: '20px' }}
           >
-            <span className="material-symbols-rounded text-[20px]">
+            <span className="material-symbols-rounded text-[20px] leading-none">
               {showConfirm ? "visibility_off" : "visibility"}
             </span>
           </button>
@@ -248,27 +301,6 @@ export default function SignupPage() {
           </label>
         </div>
 
-        {/* Email opt-in */}
-        <div className="flex items-center justify-between pt-1">
-          <span className="text-sm font-medium text-mono-dark">
-            I&apos;d like to receive emails from ExpenseTerminal
-          </span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={emailOptIn}
-            onClick={() => setEmailOptIn(!emailOptIn)}
-            className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${
-              emailOptIn ? "bg-accent-sage" : "bg-bg-tertiary"
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200 ${
-                emailOptIn ? "translate-x-5" : "translate-x-0"
-              }`}
-            />
-          </button>
-        </div>
 
         {/* Terms agreement */}
         <label className="flex items-start gap-2 pt-1 cursor-pointer">
@@ -305,14 +337,33 @@ export default function SignupPage() {
         >
           {loading ? "Creating account..." : "Get Started"}
         </button>
-      </form>
+        </form>
 
-      <p className="mt-6 text-sm text-mono-medium text-center">
-        Already have an account?{" "}
-        <Link href="/login" className="text-accent-navy font-medium">
-          Sign In
-        </Link>
-      </p>
-    </AuthLayout>
+        <p className="mt-6 text-sm text-mono-medium text-center">
+          Already have an account?{" "}
+          <Link href="/login" className="flex items-center gap-2 text-accent-navy font-medium inline-flex">
+            <span className="kbd-hint">L</span>
+            Sign In
+          </Link>
+        </p>
+      </AuthLayout>
+      
+      <div className="fixed bottom-6 right-6 text-right z-10">
+        <p className="text-xs text-mono-light">
+          By using this app, you agree to our{" "}
+          <Link href="/terms" className="underline hover:text-mono-medium transition-colors">
+            terms
+          </Link>
+          {", "}
+          <Link href="/privacy" className="underline hover:text-mono-medium transition-colors">
+            privacy policy
+          </Link>
+          {", and "}
+          <Link href="/cookies" className="underline hover:text-mono-medium transition-colors">
+            cookie policy
+          </Link>
+        </p>
+      </div>
+    </div>
   );
 }

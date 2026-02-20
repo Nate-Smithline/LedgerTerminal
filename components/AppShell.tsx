@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { Sidebar } from "./Sidebar";
 
-const AUTH_ROUTES = ["/login", "/signup", "/auth", "/terms", "/privacy"];
+const AUTH_ROUTES = ["/login", "/signup", "/auth", "/terms", "/privacy", "/cookies"];
 const FULL_WIDTH_ROUTES = ["/"];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
